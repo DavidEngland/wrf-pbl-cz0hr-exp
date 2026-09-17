@@ -1,0 +1,44 @@
+diff --git a/Registry/Registry.EM_COMMON b/Registry/Registry.EM_COMMON
+index 4d133c9b..4a178b80 100644
+--- a/Registry/Registry.EM_COMMON
++++ b/Registry/Registry.EM_COMMON
+@@ -2483,6 +2483,7 @@ rconfig   integer     bl_mynn_mixscalars  namelist,physics      max_domains    1
+ rconfig   integer     bl_mynn_output      namelist,physics      max_domains    0       irh      "bl_mynn_output"                "0:off,1:Allocate and output extra 3D arrays"      ""
+ rconfig   integer     bl_mynn_cloudmix    namelist,physics      max_domains    1       irh      "bl_mynn_cloudmix"              "0:off,1:activate mixing of all cloud species"          ""
+ rconfig   integer     bl_mynn_mixqt       namelist,physics      max_domains    0       irh      "bl_mynn_mixqt"                 "0:mix moisture species separate,1: mix total water"    ""
++rconfig   integer     bl_mynn_cz0hr       namelist,physics      max_domains    0       irh      "bl_mynn_cz0hr"                 "0:off,1:activate C-Z0HR upstream Ri regularization"  ""
+ rconfig   integer     icloud_bl           namelist,physics      1              1       irh      "icloud_bl"                     "0:no subgrid cloud-radiation coupling,1:activated"     ""
+ rconfig   real        bl_mynn_closure     namelist,physics      1              2.6     irh      "bl_mynn_closure"               "2.5: level2.5, 2.6: level 2.6, 3.0: level 3.0"         ""
+ rconfig   integer     mfshconv            namelist,physics      max_domains    1       rh       "mfshconv"         "To activate mass flux scheme with qnse, 1=true or 0=false"      ""
+diff --git a/dyn_em/module_first_rk_step_part1.F b/dyn_em/module_first_rk_step_part1.F
+index 9a56bb24..ce7e8488 100644
+--- a/dyn_em/module_first_rk_step_part1.F
++++ b/dyn_em/module_first_rk_step_part1.F
+@@ -1223,6 +1223,7 @@ BENCH_START(pbl_driver_tim)
+      &        ,bl_mynn_output=config_flags%bl_mynn_output                 &
+      &        ,bl_mynn_cloudmix=config_flags%bl_mynn_cloudmix             &
+      &        ,bl_mynn_mixqt=config_flags%bl_mynn_mixqt                   &
++     &        ,bl_mynn_cz0hr=config_flags%bl_mynn_cz0hr                   &
+      &        ,bl_mynn_closure=config_flags%bl_mynn_closure               &
+      &        ,edmf_a=grid%edmf_a,edmf_w=grid%edmf_w                      &
+      &        ,edmf_thl=grid%edmf_thl,edmf_qt=grid%edmf_qt                &
+diff --git a/phys/module_pbl_driver.F b/phys/module_pbl_driver.F
+index 24c21745..aa0067f0 100644
+--- a/phys/module_pbl_driver.F
++++ b/phys/module_pbl_driver.F
+@@ -583,6 +583,7 @@ CONTAINS
+                                      bl_mynn_output,           &
+                                      bl_mynn_cloudmix,         &
+                                      bl_mynn_mixqt,            &
++                                     bl_mynn_cz0hr,            &
+                                      icloud_bl,                &
+                                      tke_budget
+ 
+@@ -1708,6 +1709,7 @@ CONTAINS
+                    &bl_mynn_output=bl_mynn_output,                       &
+                    &bl_mynn_cloudmix=bl_mynn_cloudmix,                   &
+                    &bl_mynn_mixqt=bl_mynn_mixqt,                         &
++                   &bl_mynn_cz0hr=bl_mynn_cz0hr,                         &
+                    &bl_mynn_closure=bl_mynn_closure,                     &
+                    &spp_pbl=spp_pbl,pattern_spp_pbl=pattern_spp_pbl,     &
+                    &FLAG_QC=flag_qc,FLAG_QI=flag_qi,FLAG_QS=flag_qs,     &

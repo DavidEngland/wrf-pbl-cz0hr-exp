@@ -1,0 +1,305 @@
+diff --git a/MPAS/module_bl_mynnedmf_driver.F90 b/MPAS/module_bl_mynnedmf_driver.F90
+index 9cbf5f4..f5f42c5 100644
+--- a/MPAS/module_bl_mynnedmf_driver.F90
++++ b/MPAS/module_bl_mynnedmf_driver.F90
+@@ -518,6 +518,7 @@
+             bl_mynn_output     = bl_mynn_output       , &
+             bl_mynn_cloudmix   = bl_mynn_cloudmix     , &
+             bl_mynn_mixqt      = bl_mynn_mixqt        , &
++            bl_mynn_cz0hr      = 0                    , &
+             icloud_bl          = icloud_bl            , &
+             spp_pbl            = spp_pbl              , &
+             kts = kts , kte = kte , errmsg = errmsg , errflg = errflg )
+diff --git a/WRF/module_bl_mynnedmf_driver.F90 b/WRF/module_bl_mynnedmf_driver.F90
+index 6332302..ec6e079 100644
+--- a/WRF/module_bl_mynnedmf_driver.F90
++++ b/WRF/module_bl_mynnedmf_driver.F90
+@@ -104,6 +104,7 @@
+                   bl_mynn_tkeadvect , tke_budget        , bl_mynn_cloudpdf   , bl_mynn_mixlength  , &
+                   bl_mynn_closure   , bl_mynn_edmf      , bl_mynn_edmf_mom   , bl_mynn_edmf_tke   , &
+                   bl_mynn_output    , bl_mynn_mixscalars, bl_mynn_cloudmix   , bl_mynn_mixqt        &
++                  ,bl_mynn_cz0hr                                                              &
+ #if(WRF_CHEM == 1)
+                   ,mix_chem         , chem3d            , vd3d               , nchem              , &
+                   kdvel             , ndvel             , num_vert_mix                              &
+@@ -151,6 +152,7 @@
+          bl_mynn_edmf_tke,                              &
+          bl_mynn_cloudmix,                              &
+          bl_mynn_mixqt,                                 &
++         bl_mynn_cz0hr,                                &
+          bl_mynn_output,                                &
+          bl_mynn_mixscalars,                            &
+          spp_pbl,                                       &
+@@ -573,6 +575,7 @@
+             bl_mynn_output     = bl_mynn_output       , &
+             bl_mynn_cloudmix   = bl_mynn_cloudmix     , &
+             bl_mynn_mixqt      = bl_mynn_mixqt        , &
++            bl_mynn_cz0hr      = bl_mynn_cz0hr        , &
+             icloud_bl          = icloud_bl            , &
+             spp_pbl            = spp_pbl              , &
+             kts = kts , kte = kte , errmsg = errmsg , errflg = errflg )
+diff --git a/module_bl_mynnedmf.F90 b/module_bl_mynnedmf.F90
+index 3b6d74a..37320ab 100644
+--- a/module_bl_mynnedmf.F90
++++ b/module_bl_mynnedmf.F90
+@@ -312,6 +312,17 @@ MODULE module_bl_mynnedmf
+ ! Constants for cloud PDF (mym_condensation)
+  real(kind_phys), parameter :: rr2=0.7071068, rrp=0.3989423
+ 
++!===================================================================
++! C-Z0HR Upstream Regularization Hyperparameters
++! Curvature-Aware Zero-Offset Hyperbolic Regularization (C-Z0HR) of the
++! diagnostic gradient Richardson number profile before it drives the
++! MYNN stability closures. Activated by namelist bl_mynn_cz0hr.
++!===================================================================
++ real(kind_phys), parameter :: cz0hr_alpha = 2.0     ! slope damping control (1/(1+alpha) = 1/3)
++ real(kind_phys), parameter :: cz0hr_eps_c = 0.05    ! dimensionless curvature denominator cap
++ real(kind_phys), parameter :: cz0hr_eps   = 1.0e-3  ! hyperbolic distance metric smoothing floor (Phi_eps)
++ real(kind_phys), parameter :: cz0hr_ric   = 0.20    ! critical Richardson threshold
++
+ !>Use Canuto/Kitamura mod (remove Ric and negative TKE) (1:yes, 0:no)
+ !!For more info, see Canuto et al. (2008 JAS) and Kitamura (Journal of the 
+ !!Meteorological Society of Japan, Vol. 88, No. 5, pp. 857-864, 2010).
+@@ -410,7 +421,7 @@ CONTAINS
+              bl_mynn_mixlength  , icloud_bl         , closure           , &
+              bl_mynn_edmf       , bl_mynn_edmf_mom  , bl_mynn_edmf_tke  , &
+              bl_mynn_mixscalars , bl_mynn_output    , bl_mynn_cloudmix  , &
+-             bl_mynn_mixqt      ,                                         &
++             bl_mynn_mixqt      , bl_mynn_cz0hr     ,                     &
+              !3d emdf output
+              edmf_a1            , edmf_w1           , edmf_qt1          , &
+              edmf_thl1          , edmf_ent1         , edmf_qc1          , &
+@@ -439,6 +450,7 @@ CONTAINS
+  integer, intent(in) :: bl_mynn_output
+  integer, intent(in) :: bl_mynn_cloudmix
+  integer, intent(in) :: bl_mynn_mixqt
++ integer, intent(in) :: bl_mynn_cz0hr  ! 0: raw Ri (baseline); 1: C-Z0HR regularized Ri
+  integer, intent(in) :: icloud_bl
+  real(kind_phys), intent(in) :: closure
+ 
+@@ -712,6 +724,7 @@ CONTAINS
+ !! within mym_initialize(): mym_level2() and mym_length().
+        CALL mym_initialize (                & 
+             &kts,kte,xland,                 &
++            &bl_mynn_cz0hr,                 &
+             &dz1, dx, zw1,                  &
+             &u1, v1, thl1, sqv1,            &
+             &PBLH, th1, thv1, thlv1,        &
+@@ -1010,6 +1023,7 @@ CONTAINS
+ 
+     call mym_turbulence(                                 &
+             &kts,kte,xland,closure,                      &
++            &bl_mynn_cz0hr,                              &
+             &dz1, dx, zw1,                               &
+             &u1, v1, thl1, thv1, thlv1,                  &
+             &sqc1, sqw1,                                 &
+@@ -1269,6 +1283,7 @@ CONTAINS
+ !> @{
+   SUBROUTINE  mym_initialize (                                & 
+        &            kts,kte,xland,                            &
++       &            cz0hr,                                    &
+        &            dz, dx, zw,                               &
+        &            u, v, thl, qw,                            &
+ !       &            ust, rmo, pmz, phh, flt, flq,             &
+@@ -1285,6 +1300,7 @@ CONTAINS
+ 
+     integer, intent(in)           :: kts,kte
+     integer, intent(in)           :: bl_mynn_mixlength
++    integer, intent(in)           :: cz0hr
+     logical, intent(in)           :: INITIALIZE_QKE
+ !    real(kind_phys), intent(in)   :: ust, rmol, pmz, phh, flt, flq
+     real(kind_phys), intent(in)   :: rmol, Psig_bl, xland
+@@ -1297,7 +1313,7 @@ CONTAINS
+     real(kind_phys), dimension(kts:kte),   intent(inout) :: el,qke
+     real(kind_phys), dimension(kts:kte) ::                       &
+          &ql,pdk,pdt,pdq,pdc,dtl,dqw,dtv,                        &
+-         &gm,gh,sm,sh,qkw,vt,vq
++         &gm,gh,sm,sh,qkw,vt,vq,rig
+     integer :: k,l,lmax
+     real(kind_phys):: phm,vkz,elq,elv,b1l,b2l,pmz=1.,phh=1.,     &
+          &flt=0.,fltv=0.,flq=0.,tmpq
+@@ -1312,12 +1328,14 @@ CONTAINS
+        vq(k) = zero
+     END DO
+ !
+-!> - Call mym_level2() to calculate the stability functions at level 2.
++!!> - Call mym_level2() to calculate the stability functions at level 2.
+     CALL mym_level2 ( kts,kte,                      &
+-         &            dz,                           &
+-         &            u, v, thl, thv, thlv, qw,     &
+-         &            ql, vt, vq,                   &
+-         &            dtl, dqw, dtv, gm, gh, sm, sh )
++         &            cz0hr,                      &
++         &            dz,                         &
++         &            u, v, thl, thv, thlv, qw,   &
++         &            ql, vt, vq,                 &
++         &            dtl, dqw, dtv, gm, gh, sm, sh, &
++         &            rig )
+ !
+ !   **  Preliminary setting  **
+ 
+@@ -1474,14 +1492,17 @@ CONTAINS
+ !!\section gen_mym_level2 GSD MYNN-EDMF mym_level2 General Algorithm
+ !! @ {
+   SUBROUTINE  mym_level2 (kts,kte,                &
++       &            cz0hr,                        &
+        &            dz,                           &
+        &            u, v, thl, thv, thlv,         &
+        &            qw, ql, vt, vq,               &
+-       &            dtl, dqw, dtv, gm, gh, sm, sh )
++       &            dtl, dqw, dtv, gm, gh, sm, sh, &
++       &            rig )
+ !
+ !-------------------------------------------------------------------
+ 
+     integer, intent(in)   :: kts,kte
++    integer, intent(in)   :: cz0hr  ! 0: raw Ri (baseline); 1: C-Z0HR regularized Ri
+ 
+ #ifdef HARDCODE_VERTICAL
+ # define kts 1
+@@ -1492,7 +1513,7 @@ CONTAINS
+     real(kind_phys), dimension(kts:kte), intent(in)  :: u,v, &
+          &thl,qw,ql,vt,vq,thv,thlv
+     real(kind_phys), dimension(kts:kte), intent(out) ::      &
+-         &dtl,dqw,dtv,gm,gh,sm,sh
++         &dtl,dqw,dtv,gm,gh,sm,sh,rig
+ 
+     integer :: k
+ 
+@@ -1515,7 +1536,9 @@ CONTAINS
+     gh(kts)=0.0
+     sm(kts)=0.0
+     sh(kts)=0.0
++    rig(kts)=0.0
+ 
++!   **  Pass 1: raw gradient Richardson number profile  **
+     do k = kts+1,kte
+        dzk = 0.5  *( dz(k)+dz(k-1) )
+        afk = dz(k)/( dz(k)+dz(k-1) )
+@@ -1542,7 +1565,15 @@ CONTAINS
+        gh(k)  = -dtq*gtr
+ !
+ !   **  Gradient Richardson number  **
+-       ri = -gh(k)/MAX( duz, 1.0e-10 )
++       rig(k) = -gh(k)/MAX( duz, 1.0e-10 )
++    enddo
++!
++!   **  C-Z0HR upstream scalar regularization of the Ri_g profile  **
++    if (cz0hr == 1) call cz0hr_regularize_ri(kts,kte,dz,rig)
++!
++!   **  Pass 2: flux Richardson number and Level-2 stability functions  **
++    do k = kts+1,kte
++       ri = rig(k)
+ 
+        !a2fac is needed for the Canuto/Kitamura mod
+        if (CKmod .eq. 1) then
+@@ -2389,6 +2420,7 @@ CONTAINS
+   SUBROUTINE  mym_turbulence (                                &
+     &            kts,kte,                                     &
+     &            xland,closure,                               &
++    &            cz0hr,                                       &
+     &            dz, dx, zw,                                  &
+     &            u, v, thl, thv, thlv, ql, qw,                &
+     &            qke, tsq, qsq, cov,                          &
+@@ -2435,8 +2467,10 @@ CONTAINS
+     real(kind_phys):: dudz,dvdz,dTdz,upwp,vpwp,Tpwp
+ 
+     real(kind_phys), dimension(kts:kte) :: qkw,dtl,dqw,dtv,gm,gh,sm,sh
++    real(kind_phys), dimension(kts:kte) :: rig
+ 
+     integer :: k
++    integer, intent(in)                 :: cz0hr
+ !    real(kind_phys):: cc2,cc3,e1c,e2c,e3c,e4c,e5c
+     real(kind_phys):: e6c,dzk,afk,abk,vtt,vqq,                             &
+          &cw25,clow,cupp,gamt,gamq,smd,gamv,elq,elh
+@@ -2474,10 +2508,12 @@ CONTAINS
+ !
+ 
+     CALL mym_level2 (kts,kte,                   &
++    &            cz0hr,                         &
+     &            dz,                            &
+     &            u, v, thl, thv, thlv,          &
+     &            qw, ql, vt, vq,                &
+-    &            dtl, dqw, dtv, gm, gh, sm, sh  )
++    &            dtl, dqw, dtv, gm, gh, sm, sh, &
++    &            rig )
+ !
+     CALL mym_length (                           &
+     &            kts,kte,xland,                 &
+@@ -2509,8 +2545,8 @@ CONTAINS
+        !Canuto/Kitamura mod
+        duz = ( u(k)-u(k-1) )**2 +( v(k)-v(k-1) )**2
+        duz =   duz                    /dzk**2
+-       !   **  Gradient Richardson number  **
+-       ri = -gh(k)/MAX( duz, 1.0e-10 )
++       !   **  Gradient Richardson number (regularized profile from mym_level2)  **
++       ri = rig(k)
+        if (CKmod .eq. 1) then
+           a2fac = one/(one + max(ri,zero))
+        else
+@@ -7917,4 +7953,65 @@ END FUNCTION phih
+ ! ===================================================================
+ ! ===================================================================
+ 
++!===================================================================
++! SUBROUTINE: cz0hr_regularize_ri
++! Purpose: Upstream Curvature-Aware Zero-Offset Hyperbolic Regularization
++!          (C-Z0HR) of the gradient Richardson number profile BEFORE it is
++!          consumed by the MYNN stability closures. Maps the raw profile
++!          ri -> ri_reg using the grid cell thickness (dz) and the profile
++!          curvature (d2Ri/dz2). Leaves the Sm/Sh closure algebra 100%
++!          unmodified. In-place on the ri array.
++!===================================================================
++  PURE SUBROUTINE cz0hr_regularize_ri(kts, kte, dz, ri)
++    IMPLICIT NONE
++
++    ! Input / Output Arguments
++    INTEGER, INTENT(IN) :: kts, kte
++    REAL(kind_phys), INTENT(IN),    DIMENSION(kts:kte) :: dz  ! layer thickness at mass levels [m]
++    REAL(kind_phys), INTENT(INOUT), DIMENSION(kts:kte) :: ri  ! gradient Richardson number (wall levels)
++
++    ! Local Scalars
++    INTEGER       :: k, n_levels
++    REAL(kind_phys) :: ri_zz, c_scale, x, phi_eps, ratio
++    REAL(kind_phys) :: dz_up, dz_dn, d_ri_up, d_ri_dn
++    REAL(kind_phys), DIMENSION(kts:kte) :: ri_raw
++
++    n_levels = kte - kts + 1
++
++    ! Enforce N_z >= 3 stencil gate: sparse columns pass through unmodified
++    IF (n_levels < 3) RETURN
++
++    ri_raw(kts:kte) = ri(kts:kte)
++
++    ! Boundary levels preserved for 1-sided stencil compatibility
++    ri(kts) = ri_raw(kts)
++    ri(kte) = ri_raw(kte)
++
++    ! Interior column loop
++    DO k = kts + 1, kte - 1
++       ! ri is defined on the walls (interfaces); wall k sits between mass
++       ! levels k-1 and k, so the adjacent cell thicknesses are dz(k-1) below
++       ! and dz(k) above.
++       dz_dn = dz(k-1)
++       dz_up = dz(k)
++
++       ! 1. Second-order central spatial derivative of Ri_g (d2Ri/dz2)
++       d_ri_dn = (ri_raw(k)   - ri_raw(k-1)) / dz_dn
++       d_ri_up = (ri_raw(k+1) - ri_raw(k))   / dz_up
++       ri_zz   = 2.0_kind_phys * (d_ri_up - d_ri_dn) / (dz_up + dz_dn)
++
++       ! 2. Grid-resolved spatial curvature metric C(z, dz)
++       c_scale = 0.5_kind_phys * ABS(ri_zz) * (dz_dn**2) + cz0hr_eps_c * cz0hr_ric
++
++       ! 3. C^inf hyperbolic distance metric Phi_eps(x)
++       x       = ri_raw(k) - cz0hr_ric
++       phi_eps = SQRT(x**2 + cz0hr_eps**2)
++
++       ! 4. Upstream regularized Richardson number mapping
++       ratio = (phi_eps + c_scale) / (phi_eps + (1.0_kind_phys + cz0hr_alpha) * c_scale)
++       ri(k) = cz0hr_ric + x * ratio
++    END DO
++
++  END SUBROUTINE cz0hr_regularize_ri
++
+ END MODULE module_bl_mynnedmf

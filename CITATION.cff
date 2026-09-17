@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+title: "WRF C-Z0HR PBL Regularization (Experimental)"
+message: "If you use this software, please cite it as below."
+type: software
+authors:
+  - family-names: England
+    given-names: David E.
+    email: David.England@UAH.Edu
+identifiers:
+  - description: "MYNN-EDMF submodule commit this release targets"
+    type: other
+    value: "NCAR/MYNN-EDMF@90f36c25259ec1960b24325f5b29ac7c5adeac73"
+abstract: >-
+  Curvature-Aware Zero-Offset Hyperbolic Regularization (C-Z0HR) of the
+  gradient Richardson number profile for the MYNN-EDMF planetary boundary
+  layer scheme in WRF. Experimental, namelist-toggled (bl_mynn_cz0hr),
+  upstream diagnostic regularization intended to mitigate spurious quenching,
+  numerical stiffness, and runaway nocturnal surface cold-pool biases in
+  stable boundary layer simulations.
+keywords:
+  - WRF
+  - MYNN-EDMF
+  - planetary boundary layer
+  - stable boundary layer
+  - Richardson number
+  - turbulence closure
+license: MIT
